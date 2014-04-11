@@ -1,6 +1,7 @@
 package edu.buffalo.cse.cse486586.simpledht;
 
 import java.io.Serializable;
+import java.util.HashMap;
 
 public class Message implements Serializable {
 	private boolean insertAfter=false,insertBefore=false;
@@ -12,6 +13,7 @@ public class Message implements Serializable {
 	private String selection = null;
 	private String insertKey = null;
 	private String insertData = null;
+	private HashMap<String,String> db=null;
 	
 	
 	public Message() {
@@ -90,5 +92,11 @@ public class Message implements Serializable {
 	}
 	public void setOrigin(String origin) {
 		this.origin = origin;
+	}
+	public HashMap<String,String> getDb() {
+		return db;
+	}
+	public void setDb(HashMap<String,String> db) {
+		this.db = db;
 	}
 }

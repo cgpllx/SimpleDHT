@@ -164,11 +164,59 @@ public class SimpleDhtProvider extends ContentProvider {
     	Message M = null;
     	messageTable = mOpenHelper.getReadableDatabase();
     	if(selection.equalsIgnoreCase("*")){
+    		Socket socket=null;
+    		MatrixCursor matrixCursor = null;
+    		ObjectOutputStream out=null;
+    		ObjectInputStream input=null;
     		cursor=messageTable.rawQuery("SELECT * FROM "+TABLE_NAME, null);
     		M=new Message("queryAll");
-    		M.setDestination(successor);
-    		M.setOrigin(String.valueOf(MY_AVD_NUM));
-    		
+    		HashMap<String, String> db= new HashMap<String, String>();
+    		cursor.moveToFirst();
+			while(!cursor.isAfterLast()){
+				db.put(cursor.getString(0),cursor.getString(1));
+				cursor.moveToNext();
+			}
+    		M.setDb(db);
+    		M.setSelection("@");
+    		try {
+					 socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
+				        Integer.parseInt(successor)*2);
+					 out = new ObjectOutputStream(socket.getOutputStream());
+					 out.writeObject(M);
+					 out.flush();
+					 input = new ObjectInputStream(socket.getInputStream());
+					 M=(Message)input.readObject();
+					 socket.close();
+				 while(!M.getSuc().equals(MY_PORT)){
+					 socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
+						        Integer.parseInt(M.getSuc()));
+					 out = new ObjectOutputStream(socket.getOutputStream());
+					 out.writeObject(M);
+					 out.flush();
+					 input = new ObjectInputStream(socket.getInputStream());
+					 M=(Message)input.readObject();
+					 socket.close();
+				 }
+				 db=M.getDb();
+				 matrixCursor = new MatrixCursor (new String[]{KEY_FIELD, VALUE_FIELD});
+					for(Map.Entry<String,String> entry : db.entrySet()){
+						matrixCursor.addRow(new String[]{entry.getKey(),entry.getValue()});
+					}
+					matrixCursor.moveToFirst();
+					cursor = matrixCursor;
+			} catch (NumberFormatException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (UnknownHostException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (ClassNotFoundException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} 
     	}
     	else if(selection.equalsIgnoreCase("@")){
     		cursor=messageTable.rawQuery("SELECT * FROM "+TABLE_NAME, null);	
@@ -248,6 +296,12 @@ public class SimpleDhtProvider extends ContentProvider {
 		}
 
     	return matrixCursor;
+    }
+    private void queryHelper(Message m){
+    	if(m.getOrigin().equals(String.valueOf(MY_AVD_NUM))){
+    		
+    	}else{
+    	}
     }
 
     private String genHash(String input) throws NoSuchAlgorithmException {
@@ -533,6 +587,26 @@ public class SimpleDhtProvider extends ContentProvider {
 						}
 						Log.d(TAG, "after for loop");
 						out.writeObject(db);
+						out.flush();
+						out.close();
+					} catch (IOException e) {
+						e.printStackTrace();
+					}
+				}else if(inputString.getMsgType().equalsIgnoreCase("queryAll")){
+					Cursor c=null;
+					c=query(null, null, inputString.getSelection(), null, null);
+					try {
+						out = new ObjectOutputStream(socket.getOutputStream());
+						HashMap<String,String> db = new HashMap<String, String>();
+						Log.d(TAG, "before for loop");
+						c.moveToFirst();
+						while(!c.isAfterLast()){
+							inputString.getDb().put(c.getString(0),c.getString(1));
+							c.moveToNext();
+						}
+						inputString.setSuc(String.valueOf(Integer.parseInt(successor)*2));
+						Log.d(TAG, "after for loop");
+						out.writeObject(inputString);
 						out.flush();
 						out.close();
 					} catch (IOException e) {
