@@ -8,6 +8,7 @@ public class Message implements Serializable {
 	private String portNum;
 	private String pred=null, suc=null;
 	private String destination= null;
+	private String origin = null;
 	private String selection = null;
 	private String insertKey = null;
 	private String insertData = null;
@@ -83,5 +84,11 @@ public class Message implements Serializable {
 	}
 	public void setInsertData(String insertData) {
 		this.insertData = insertData;
+	}
+	public String getOrigin() {
+		return origin;
+	}
+	public void setOrigin(String origin) {
+		this.origin = origin;
 	}
 }

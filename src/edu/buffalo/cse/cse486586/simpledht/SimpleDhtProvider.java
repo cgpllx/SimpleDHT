@@ -11,12 +11,15 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Formatter;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
 import java.util.concurrent.Executor;
 
 import android.content.ContentProvider;
 import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
+import android.database.MatrixCursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.database.sqlite.SQLiteQueryBuilder;
@@ -161,48 +164,54 @@ public class SimpleDhtProvider extends ContentProvider {
     	Message M = null;
     	messageTable = mOpenHelper.getReadableDatabase();
     	if(selection.equalsIgnoreCase("*")){
-    		//queryBuilder.appendWhere("key = '" + selection + "'");
     		cursor=messageTable.rawQuery("SELECT * FROM "+TABLE_NAME, null);
+    		M=new Message("queryAll");
+    		M.setDestination(successor);
+    		M.setOrigin(String.valueOf(MY_AVD_NUM));
+    		
     	}
     	else if(selection.equalsIgnoreCase("@")){
     		cursor=messageTable.rawQuery("SELECT * FROM "+TABLE_NAME, null);	
     	}else{
-    		/*try {
+   			if(successor==null){
+   				cursor=messageTable.rawQuery("SELECT * FROM "+TABLE_NAME+" WHERE key='"+selection+"'", null);
+    			}else{
+    			try {
     			succHash = genHash(successor);
 				predHash = genHash(predecessor);
 				keyHash=genHash(selection);
-			} catch (NoSuchAlgorithmException e) {
+    			} catch (NoSuchAlgorithmException e) {
 				e.printStackTrace();
-			}
-    		//current hash is bigger than key hash
-			if(MY_PORT_HASH.compareTo(keyHash)>=0){
-			//the hash is greater than predecessor
-				if(keyHash.compareTo(predHash)>0){*/
+    			}
+    			//current hash is bigger than key hash
+    			if(MY_PORT_HASH.compareTo(keyHash)>=0){
+    			//the hash is greater than predecessor
+				if(keyHash.compareTo(predHash)>0){
 					cursor=messageTable.rawQuery("SELECT * FROM "+TABLE_NAME+" WHERE key='"+selection+"'", null);
-	    		/*}
-			else{//the hash is smaller the the predecessor
-				if(MY_PORT_HASH.compareTo(predHash)<0 && MY_PORT_HASH.compareTo(succHash)<0){
-					cursor=messageTable.rawQuery("SELECT * FROM "+TABLE_NAME+" WHERE key='"+selection+"'", null);
-				}else{
-					M= new Message("query");
-					M.setDestination(predecessor);
-					M.setKeyHash(keyHash);
-					M.setSelection(selection);
-					cursor = findQuery(M);
-				}
-			}
-		}else{
+	    		}else{//the hash is smaller the the predecessor
+					if(MY_PORT_HASH.compareTo(predHash)<0 && MY_PORT_HASH.compareTo(succHash)<0){
+						cursor=messageTable.rawQuery("SELECT * FROM "+TABLE_NAME+" WHERE key='"+selection+"'", null);
+					}else{
+						M= new Message("query");
+						M.setDestination(predecessor);
+						M.setKeyHash(keyHash);
+						M.setSelection(selection);
+						cursor = findQuery(M);
+					}
+	    		}
+			}else{
 			//the key hash is larger than current hash
 			if(MY_PORT_HASH.compareTo(predHash)<0 && MY_PORT_HASH.compareTo(succHash)<0 && keyHash.compareTo(predHash)>0){
 				cursor=messageTable.rawQuery("SELECT * FROM "+TABLE_NAME+" WHERE key='"+selection+"'", null);
 			}else{
 				M= new Message("query");
-				M.setDestination(predecessor);
+				M.setDestination(successor);
 				M.setKeyHash(keyHash);
 				M.setSelection(selection);
 				cursor = findQuery(M);
+				}
 			}
-		}*/
+    	}
 	}
     	Log.d("query ", selection +" ");
         return cursor;
@@ -213,6 +222,7 @@ public class SimpleDhtProvider extends ContentProvider {
         return 0;
     }
     private Cursor findQuery(Message m){
+    	MatrixCursor matrixCursor = null;
 		try {
 			HashMap<String,String> db = new HashMap<String, String>();
 			Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
@@ -222,7 +232,11 @@ public class SimpleDhtProvider extends ContentProvider {
 			output.flush();
 			ObjectInputStream input = new ObjectInputStream(socket.getInputStream());
 			db = (HashMap<String, String>)input.readObject();
-			//TODO: code to load the cursor
+			 matrixCursor = new MatrixCursor (new String[]{KEY_FIELD, VALUE_FIELD});
+			for(Map.Entry<String,String> entry : db.entrySet()){
+				matrixCursor.addRow(new String[]{entry.getKey(),entry.getValue()});
+			}
+			matrixCursor.moveToFirst();
 		} catch (NumberFormatException e) {
 			e.printStackTrace();
 		} catch (UnknownHostException e) {
@@ -233,7 +247,7 @@ public class SimpleDhtProvider extends ContentProvider {
 			e.printStackTrace();
 		}
 
-    	return null;
+    	return matrixCursor;
     }
 
     private String genHash(String input) throws NoSuchAlgorithmException {
@@ -503,7 +517,27 @@ public class SimpleDhtProvider extends ContentProvider {
 					cV.put(VALUE_FIELD, inputString.getInsertData());
 					insert(null, cV);
 				}else if(inputString.getMsgType().equalsIgnoreCase("query")){
-					//query(uri, projection, selection, selectionArgs, sortOrder);
+					Cursor  c = query(null, null, inputString.getSelection(), null, null);
+					Log.d(TAG,"cursor returned from query");
+					if(c==null){
+						Log.d(TAG, "cursor is null");
+					}
+					try {
+						out = new ObjectOutputStream(socket.getOutputStream());
+						HashMap<String,String> db = new HashMap<String, String>();
+						Log.d(TAG, "before for loop");
+						c.moveToFirst();
+						while(!c.isAfterLast()){
+							db.put(c.getString(0),c.getString(1));
+							c.moveToNext();
+						}
+						Log.d(TAG, "after for loop");
+						out.writeObject(db);
+						out.flush();
+						out.close();
+					} catch (IOException e) {
+						e.printStackTrace();
+					}
 				}
 			}
 		}
