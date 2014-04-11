@@ -10,6 +10,7 @@ import java.net.UnknownHostException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Formatter;
+import java.util.HashMap;
 import java.util.concurrent.Executor;
 
 import android.content.ContentProvider;
@@ -66,7 +67,7 @@ public class SimpleDhtProvider extends ContentProvider {
     	messageTable = mOpenHelper.getWritableDatabase();
     	Log.d("writabledatabase", values.toString());
     	String keyHash=null;
-    	Message[] M = null;
+    	Message[] M = new Message[1];
     	try {
 			if(successor ==null){
 				Log.d(TAG, "sucessor = null");
@@ -74,41 +75,53 @@ public class SimpleDhtProvider extends ContentProvider {
 			}
 			// the hash is less than equal to current
 			else{
+				Log.d(TAG, "insert in chord");
 				String succHash = genHash(successor);
 				String predHash = genHash(predecessor);
 				keyHash = genHash(values.getAsString(KEY_FIELD));
+				Log.d(TAG, "keyhash: "+keyHash+ " myHash :"+MY_PORT_HASH);
 				//current hash is bigger than key hash
 				if(MY_PORT_HASH.compareTo(keyHash)>=0){
 				//the hash is greater than predecessor
-				if(keyHash.compareTo(predHash)>0){
-					messageTable.insert(TABLE_NAME, null, values);
-				}else{//the hash is smaller the the predecessor
-					if(MY_PORT_HASH.compareTo(predHash)<0 && MY_PORT_HASH.compareTo(succHash)<0){
+					Log.d(TAG, "hash is bigger than key");
+					if(keyHash.compareTo(predHash)>0){
+						Log.d(TAG, "hash is bigger than pred");
+						messageTable.insert(TABLE_NAME, null, values);
+						Log.d(TAG,"Insert locally");
+					}else{//the hash is smaller the the predecessor
+						Log.d(TAG, "hash is smaller than pred");
+						if(MY_PORT_HASH.compareTo(predHash)<0 && MY_PORT_HASH.compareTo(succHash)<0){
+							Log.d(TAG, "i am the smallest");
+							messageTable.insert(TABLE_NAME, null, values);
+							Log.d(TAG, "insert locally");
+						}else{
+							Log.d(TAG, "send to prev node");
+							M[0]=new Message("insert");
+							M[0].setDestination(predecessor);
+							M[0].setKeyHash(keyHash);
+							M[0].setInsertKey(values.getAsString(KEY_FIELD));
+							M[0].setInsertData(values.getAsString(VALUE_FIELD));
+							new ClientTask().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, M);
+						}
+					}
+				}else{
+					Log.d(TAG, "the key hash is larger than current hash");
+					//the key hash is larger than current hash
+					if(MY_PORT_HASH.compareTo(predHash)<0 && MY_PORT_HASH.compareTo(succHash)<0 && keyHash.compareTo(predHash)>0){
+						Log.d(TAG, "insert at current node");
 						messageTable.insert(TABLE_NAME, null, values);
 					}else{
+						Log.d(TAG, "send to next node");
 						M[0]=new Message("insert");
-						M[0].setDestination(predecessor);
+						M[0].setDestination(successor);
 						M[0].setKeyHash(keyHash);
 						M[0].setInsertKey(values.getAsString(KEY_FIELD));
 						M[0].setInsertData(values.getAsString(VALUE_FIELD));
 						new ClientTask().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, M);
 					}
 				}
-			}else{
-				//the key hash is larger than current hash
-				if(MY_PORT_HASH.compareTo(predHash)<0 && MY_PORT_HASH.compareTo(succHash)<0 && keyHash.compareTo(predHash)>0){
-					messageTable.insert(TABLE_NAME, null, values);
-				}else{
-					M[0]=new Message("insert");
-					M[0].setDestination(successor);
-					M[0].setKeyHash(keyHash);
-					M[0].setInsertKey(values.getAsString(KEY_FIELD));
-					M[0].setInsertData(values.getAsString(VALUE_FIELD));
-					new ClientTask().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, M);
-				}
 			}
-		}
-			} catch (NoSuchAlgorithmException e) {
+		} catch (NoSuchAlgorithmException e) {
 			e.printStackTrace();
 		}
         return uri;
@@ -145,7 +158,7 @@ public class SimpleDhtProvider extends ContentProvider {
     	String keyHash=null;
     	String predHash = null;
     	String succHash=null;
-    	Message[] M = null;
+    	Message M = null;
     	messageTable = mOpenHelper.getReadableDatabase();
     	if(selection.equalsIgnoreCase("*")){
     		//queryBuilder.appendWhere("key = '" + selection + "'");
@@ -154,7 +167,7 @@ public class SimpleDhtProvider extends ContentProvider {
     	else if(selection.equalsIgnoreCase("@")){
     		cursor=messageTable.rawQuery("SELECT * FROM "+TABLE_NAME, null);	
     	}else{
-    		try {
+    		/*try {
     			succHash = genHash(successor);
 				predHash = genHash(predecessor);
 				keyHash=genHash(selection);
@@ -164,18 +177,18 @@ public class SimpleDhtProvider extends ContentProvider {
     		//current hash is bigger than key hash
 			if(MY_PORT_HASH.compareTo(keyHash)>=0){
 			//the hash is greater than predecessor
-				if(keyHash.compareTo(predHash)>0){
+				if(keyHash.compareTo(predHash)>0){*/
 					cursor=messageTable.rawQuery("SELECT * FROM "+TABLE_NAME+" WHERE key='"+selection+"'", null);
-	    		}
+	    		/*}
 			else{//the hash is smaller the the predecessor
 				if(MY_PORT_HASH.compareTo(predHash)<0 && MY_PORT_HASH.compareTo(succHash)<0){
 					cursor=messageTable.rawQuery("SELECT * FROM "+TABLE_NAME+" WHERE key='"+selection+"'", null);
 				}else{
-					M[0]= new Message("query");
-					M[0].setDestination(predecessor);
-					M[0].setKeyHash(keyHash);
-					M[0].setSelection(selection);
-					new ClientTask().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, M);
+					M= new Message("query");
+					M.setDestination(predecessor);
+					M.setKeyHash(keyHash);
+					M.setSelection(selection);
+					cursor = findQuery(M);
 				}
 			}
 		}else{
@@ -183,13 +196,13 @@ public class SimpleDhtProvider extends ContentProvider {
 			if(MY_PORT_HASH.compareTo(predHash)<0 && MY_PORT_HASH.compareTo(succHash)<0 && keyHash.compareTo(predHash)>0){
 				cursor=messageTable.rawQuery("SELECT * FROM "+TABLE_NAME+" WHERE key='"+selection+"'", null);
 			}else{
-				M[0]= new Message("query");
-				M[0].setDestination(predecessor);
-				M[0].setKeyHash(keyHash);
-				M[0].setSelection(selection);
-				new ClientTask().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, M);
+				M= new Message("query");
+				M.setDestination(predecessor);
+				M.setKeyHash(keyHash);
+				M.setSelection(selection);
+				cursor = findQuery(M);
 			}
-		}
+		}*/
 	}
     	Log.d("query ", selection +" ");
         return cursor;
@@ -197,8 +210,30 @@ public class SimpleDhtProvider extends ContentProvider {
 
     @Override
     public int update(Uri uri, ContentValues values, String selection, String[] selectionArgs) {
-        // TODO Auto-generated method stub
         return 0;
+    }
+    private Cursor findQuery(Message m){
+		try {
+			HashMap<String,String> db = new HashMap<String, String>();
+			Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
+			        Integer.parseInt(m.getDestination())*2);
+			ObjectOutputStream output = new ObjectOutputStream(socket.getOutputStream());
+			output.writeObject(m);
+			output.flush();
+			ObjectInputStream input = new ObjectInputStream(socket.getInputStream());
+			db = (HashMap<String, String>)input.readObject();
+			//TODO: code to load the cursor
+		} catch (NumberFormatException e) {
+			e.printStackTrace();
+		} catch (UnknownHostException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		} catch (ClassNotFoundException e) {
+			e.printStackTrace();
+		}
+
+    	return null;
     }
 
     private String genHash(String input) throws NoSuchAlgorithmException {
@@ -461,12 +496,14 @@ public class SimpleDhtProvider extends ContentProvider {
 						}
 					}
 					Log.d(TAG,MY_AVD_NUM+" pred = "+ predecessor+" succ = "+successor);
-				}else if(inputString.getMsgType().equalsIgnoreCase("message")){
+				}else if(inputString.getMsgType().equalsIgnoreCase("insert")){
 					//TODO: code for query
 					ContentValues cV = new ContentValues();
 					cV.put(KEY_FIELD, inputString.getInsertKey());
 					cV.put(VALUE_FIELD, inputString.getInsertData());
 					insert(null, cV);
+				}else if(inputString.getMsgType().equalsIgnoreCase("query")){
+					//query(uri, projection, selection, selectionArgs, sortOrder);
 				}
 			}
 		}
@@ -489,7 +526,7 @@ public class SimpleDhtProvider extends ContentProvider {
 		protected Void doInBackground(Message... msg) {
 			try {
 				if(MY_AVD_NUM!=5554 && msg==null){
-					Log.d(TAG, "in Client Tast");
+					Log.d(TAG, "in Client Task");
 					Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
 					        Integer.parseInt(REMOTE_PORT0));
 					Message joinRequest = new Message("request");
@@ -514,6 +551,9 @@ public class SimpleDhtProvider extends ContentProvider {
 					socket.close();
 				}else if(msg!=null&&msg[0].getMsgType().equalsIgnoreCase("query")){
 					
+				}
+				else{
+					Log.d(TAG, "no condition in client task met");
 				}
 			} catch (NumberFormatException e) {
 				e.printStackTrace();
